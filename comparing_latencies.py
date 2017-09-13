@@ -159,7 +159,7 @@ def ReadConfigFile(solution_file):
 			items = line.attrib["name"].split("_")
 			yield tuple(items), val
 
-def GetRequestGenerator(networkLatencies, readStorageLatencies, randomFrontEnd, listOfReplicas, readQourumSize):
+def GetRequestGenerator(networkLatencies, readStorageLatencies, randomFrontEnd, listOfReplicas, readQuorumSize):
 	sampledNetworkLatencies = {}
 	sampledStorageLatencies = {}
 	totalLinkLatency = {}
@@ -169,14 +169,14 @@ def GetRequestGenerator(networkLatencies, readStorageLatencies, randomFrontEnd, 
 		# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
 		totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
 
-	readQourum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), readQourumSize)]
+	readQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), readQuorumSize)]
 
-	getLatencies = [totalLinkLatency[i] for i in readQourum]
+	getLatencies = [totalLinkLatency[i] for i in readQuorum]
 
 	getLatencies.sort()
 	return getLatencies[-1]
 
-def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, listOfReplicas, readQourumSize, writeQourumSize):
+def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, listOfReplicas, readQuorumSize, writeQuorumSize):
 	sampledNetworkLatencies = {}
 	sampledStorageLatencies = {}
 	totalLinkLatency = {}
@@ -188,8 +188,8 @@ def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, list
 		# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
 		totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
 
-	readQourum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), readQourumSize)]
-	getLatencies = [totalLinkLatency[i] for i in readQourum]
+	readQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), readQuorumSize)]
+	getLatencies = [totalLinkLatency[i] for i in readQuorum]
 	getLatencies.sort()
 	phase1Latency = getLatencies[-1]
 
@@ -203,8 +203,8 @@ def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, list
 		# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
 		totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
 
-	writeQourum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), writeQourumSize)]
-	putLatencies = [totalLinkLatency[i] for i in writeQourum]
+	writeQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), writeQuorumSize)]
+	putLatencies = [totalLinkLatency[i] for i in writeQuorum]
 	putLatencies.sort()
 	phase2Latency = putLatencies[-1]
 
@@ -213,27 +213,27 @@ def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, list
 def main():
 	if len(sys.argv) < 3:
 		print "Invalid argument"
-		print "Usage: python compare_latencies.py <path to config file> <qourum system | -b,-p,-rd> [number of requests, default=50k]"
+		print "Usage: python compare_latencies.py <path to config file> <quorum system | -b,-p,-rd> [number of requests, default=50k]"
 		return
 	configFile = sys.argv[1]
-	qourumSystem = sys.argv[2][1:]
+	quorumSystem = sys.argv[2][1:]
 	numberOfRequests = 50000
 	if len(sys.argv) == 4:
 		numberOfRequests = int(sys.argv[3])
 
 	networkLatencies = ReadNetworkLatencies()
 	storageLatencies = ReadStorageLatencies()
-	readQourumSize = 0
-	writeQourumSize = 0
+	readQuorumSize = 0
+	writeQuorumSize = 0
 	accessSet = []
 	listOfReplicas = []
 	parsedConfigFile = ReadConfigFile(configFile)
 	for iter in parsedConfigFile:
 		if len(iter[0]) >= 2:
 			if iter[0][0] == "M" and iter[0][1] == "R":
-				readQourumSize = iter[1]
+				readQuorumSize = iter[1]
 			elif iter[0][0] == "M" and iter[0][1] == "W":
-				writeQourumSize = iter[1]
+				writeQuorumSize = iter[1]
 			elif iter[0][0] == "C":
 				if dcIndexMap[iter[0][1]] not in listOfReplicas:
 					listOfReplicas.append(dcIndexMap[iter[0][1]])
@@ -241,13 +241,13 @@ def main():
 				if dcIndexMap[iter[0][1]] not in accessSet:
 					accessSet.append(dcIndexMap[iter[0][1]])
 
-	print "Read qourum size", readQourumSize
-	print "Write qourum size", writeQourumSize
+	print "Read quorum size", readQuorumSize
+	print "Write quorum size", writeQuorumSize
 	print "Access set", accessSet
 	print "List of replicas", listOfReplicas
 
-	if qourumSystem == "b":
-		outputFileName = 'results/' + 'latency_' + qourumSystem + '_' + str(numberOfRequests)
+	if quorumSystem == "b":
+		outputFileName = 'results/' + 'latency_' + quorumSystem + '_' + str(numberOfRequests)
 		if not os.path.exists(os.path.dirname(outputFileName)):
 			try:
 				os.makedirs(os.path.dirname(outputFileName))
@@ -257,8 +257,8 @@ def main():
 		outputFile = open(outputFileName, 'w')
 		for _ in range(numberOfRequests):
 			frontend = random.choice(accessSet)
-			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, readQourumSize)
-			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, readQourumSize, writeQourumSize)
+			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, readQuorumSize)
+			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, readQuorumSize, writeQuorumSize)
 			outputFile.write("get " + str(sampleGet) + " put " + str(samplePut) + "\n")
 
 
