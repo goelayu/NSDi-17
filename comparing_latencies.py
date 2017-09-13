@@ -3,6 +3,7 @@
 import errno
 import sys
 from os import listdir
+from QuorumSystem import Quorumsystem
 import xml.etree.ElementTree as et
 import random
 import os
@@ -63,224 +64,156 @@ dcIndexMap = {
 
 
 def ReadNetworkLatencies():
-	"""
-	Reads network latencies from the given file
-	More information about file format inside /vault-home/uluyol/paxosstore-results/README
-	"""
-	print "Reading network latency file..."
-	latencies = {}
-	latencyFile = open(NET_LATENCIES_LOG, 'r')
-	# errorCount = 0
-	# valueCount = 0
-	for line in latencyFile.readlines():
-		lineData = line.strip().split()
-		dc1 = lineData[1]
-		dc2 = lineData[2]
-		latency = lineData[0]
+    """
+    Reads network latencies from the given file
+    More information about file format inside /vault-home/uluyol/paxosstore-results/README
+    """
+    print "Reading network latency file..."
+    latencies = {}
+    latencyFile = open(NET_LATENCIES_LOG, 'r')
+    # errorCount = 0
+    # valueCount = 0
+    for line in latencyFile.readlines():
+        lineData = line.strip().split()
+        dc1 = lineData[1]
+        dc2 = lineData[2]
+        latency = lineData[0]
 
 
-		if latency != "error":
-			if dc1 not in latencies:
-				latencies[dc1] = {}
-			if dc2 not in latencies[dc1]:
-				latencies[dc1][dc2] = []
-			try:
-				l = float(latency)
-				latencies[dc1][dc2].append(l)
-			except ValueError:
-				pass
-			# valueCount += 1
+        if latency != "error":
+            if dc1 not in latencies:
+                latencies[dc1] = {}
+            if dc2 not in latencies[dc1]:
+                latencies[dc1][dc2] = []
+            try:
+                l = float(latency)
+                latencies[dc1][dc2].append(l)
+            except ValueError:
+                pass
+            # valueCount += 1
 
-			# errorCount += 1
-		# if dc1 == "az/northcentralus" and dc2 == "az/eastus":
-		# 	print latency
-		# 	print len(latencies[dc1][dc2])
-	# print valueCount
-	return latencies
+            # errorCount += 1
+        # if dc1 == "az/northcentralus" and dc2 == "az/eastus":
+        #     print latency
+        #     print len(latencies[dc1][dc2])
+    # print valueCount
+    return latencies
 
 def ReadStorageLatencies():
-	"""
-	Reads storage latencies from the given file
-	More information about file format inside /vault-home/uluyol/paxosstore-results/README
-	"""
-	print "Reading storage latency file..."
-	readLatency = {}
-	writeLatency = {}
-	datacenters = listdir(STORE_LATENCIES_TOP)
-	for dc in datacenters:
-		readStoragefile = open(STORE_LATENCIES_TOP + dc + STORE_READ_FILE, 'r')
-		for line in readStoragefile.readlines():
-			lineData = line.strip().split()
-			status = lineData[0]
-			latency = lineData[3]
+    """
+    Reads storage latencies from the given file
+    More information about file format inside /vault-home/uluyol/paxosstore-results/README
+    """
+    print "Reading storage latency file..."
+    readLatency = {}
+    writeLatency = {}
+    datacenters = listdir(STORE_LATENCIES_TOP)
+    for dc in datacenters:
+        readStoragefile = open(STORE_LATENCIES_TOP + dc + STORE_READ_FILE, 'r')
+        for line in readStoragefile.readlines():
+            lineData = line.strip().split()
+            status = lineData[0]
+            latency = lineData[3]
 
-			if status == "success":
-				dcKey = dc.replace("-", "/", 1)
-				if dcKey not in readLatency:
-					readLatency[dcKey] = []
-				try:
-					l = float(latency)
-					readLatency[dcKey].append(l)
-				except ValueError:
-					pass
+            if status == "success":
+                dcKey = dc.replace("-", "/", 1)
+                if dcKey not in readLatency:
+                    readLatency[dcKey] = []
+                try:
+                    l = float(latency)
+                    readLatency[dcKey].append(l)
+                except ValueError:
+                    pass
 
-		writeStoragefile = open(STORE_LATENCIES_TOP + dc + STORE_WRITE_FILE, 'r')
-		for line in writeStoragefile.readlines():
-			lineData = line.strip().split()
-			status = lineData[0]
-			latency = lineData[3]
+        writeStoragefile = open(STORE_LATENCIES_TOP + dc + STORE_WRITE_FILE, 'r')
+        for line in writeStoragefile.readlines():
+            lineData = line.strip().split()
+            status = lineData[0]
+            latency = lineData[3]
 
-			if status == "success":
-				dcKey = dc.replace("-", "/", 1)
-				if dcKey not in writeLatency:
-					writeLatency[dcKey] = []
-				try:
-					l = float(latency)
-					writeLatency[dcKey].append(l)
-				except ValueError:
-					pass
+            if status == "success":
+                dcKey = dc.replace("-", "/", 1)
+                if dcKey not in writeLatency:
+                    writeLatency[dcKey] = []
+                try:
+                    l = float(latency)
+                    writeLatency[dcKey].append(l)
+                except ValueError:
+                    pass
 
-		# if dc == "gc-asia-east1":
-		# 	print len(readLatency[dc])
-		# 	print len(writeLatency[dc])
-	return (readLatency, writeLatency)
+        # if dc == "gc-asia-east1":
+        #     print len(readLatency[dc])
+        #     print len(writeLatency[dc])
+    return (readLatency, writeLatency)
 
 def ReadConfigFile(solution_file):
-	tree = et.parse(solution_file)
-	root = tree.getroot()
-	child = None
-	for elem in root:
-		if elem.tag == "variables":
-			child = elem
-			break
-	for line in child:
-		val = int(float(line.attrib["value"])+0.5)
-		if val != 0:
-			items = line.attrib["name"].split("_")
-			yield tuple(items), val
-
-def GetRequestGenerator(networkLatencies, readStorageLatencies, randomFrontEnd, listOfReplicas, readQuorumSize):
-	sampledNetworkLatencies = {}
-	sampledStorageLatencies = {}
-	totalLinkLatency = {}
-	for dc in listOfReplicas:
-		sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
-		sampledStorageLatencies[dc] = random.choice(readStorageLatencies[dc])
-		# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
-		totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
-
-	readQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), readQuorumSize)]
-
-	getLatencies = [totalLinkLatency[i] for i in readQuorum]
-
-	getLatencies.sort()
-	return getLatencies[-1]
-
-def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, listOfReplicas, readQuorumSize, writeQuorumSize, useFlexiblePaxos):
-	sampledNetworkLatencies = {}
-	sampledStorageLatencies = {}
-	totalLinkLatency = {}
-
-	if useFlexiblePaxos:
-		for dc in listOfReplicas:
-			# print "network latency", networkLatencies[randomFrontEnd][dc][:10]
-			sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
-			# print "storage latency", storageLatencies[0][dc][:10]
-			sampledStorageLatencies[dc] = random.choice(storageLatencies[0][dc])
-			# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
-			totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
-
-		readQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), readQuorumSize)]
-		getLatencies = [totalLinkLatency[i] for i in readQuorum]
-		getLatencies.sort()
-		phase1Latency = getLatencies[-1]
-
-	else:
-		for dc in listOfReplicas:
-			# print "network latency", networkLatencies[randomFrontEnd][dc][:10]
-			sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
-			# print "storage latency", storageLatencies[0][dc][:10]
-			sampledStorageLatencies[dc] = random.choice(storageLatencies[1][dc])
-			# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
-			totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
-
-		writeQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), writeQuorumSize)]
-		putLatencies = [totalLinkLatency[i] for i in writeQuorum]
-		putLatencies.sort()
-		phase1Latency = putLatencies[-1]
-
-	# clarify whether use the same links or not as the front end is the same
-	sampledNetworkLatencies = {}
-	sampledStorageLatencies = {}
-	totalLinkLatency = {}
-	for dc in listOfReplicas:
-		sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
-		sampledStorageLatencies[dc] = random.choice(storageLatencies[1][dc])
-		# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
-		totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
-
-	writeQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), writeQuorumSize)]
-	putLatencies = [totalLinkLatency[i] for i in writeQuorum]
-	putLatencies.sort()
-	phase2Latency = putLatencies[-1]
-
-	return phase1Latency + phase2Latency
+    tree = et.parse(solution_file)
+    root = tree.getroot()
+    child = None
+    for elem in root:
+        if elem.tag == "variables":
+            child = elem
+            break
+    for line in child:
+        val = int(float(line.attrib["value"])+0.5)
+        if val != 0:
+            items = line.attrib["name"].split("_")
+            yield tuple(items), val
 
 def main():
-	if len(sys.argv) < 3:
-		print "Invalid argument"
-		print "Usage: python compare_latencies.py <path to config file> <quorum system | -b,-p,-rd> [number of requests, default=50k]"
-		return
-	configFile = sys.argv[1]
-	quorumSystem = sys.argv[2][1:]
-	numberOfRequests = 50000
-	if len(sys.argv) == 4:
-		numberOfRequests = int(sys.argv[3])
+    if len(sys.argv) < 3:
+        print "Invalid argument"
+        print "Usage: python compare_latencies.py <path to config file> <quorum system | -b,-p,-rd> [number of requests, default=50k]"
+        return
+    configFile = sys.argv[1]
+    quorumType = sys.argv[2][1:]
+    numberOfRequests = 50000
+    if len(sys.argv) == 4:
+        numberOfRequests = int(sys.argv[3])
 
-	networkLatencies = ReadNetworkLatencies()
-	storageLatencies = ReadStorageLatencies()
-	readQuorumSize = 0
-	writeQuorumSize = 0
-	accessSet = []
-	listOfReplicas = []
+    networkLatencies = ReadNetworkLatencies()
+    storageLatencies = ReadStorageLatencies()
+    readQuorumSize = 0
+    writeQuorumSize = 0
+    accessSet = []
+    listOfReplicas = []
 
-	FLEXIBLE_PAXOS = False
+    FLEXIBLE_PAXOS = False
 
-	parsedConfigFile = ReadConfigFile(configFile)
-	for iter in parsedConfigFile:
-		if len(iter[0]) >= 2:
-			if iter[0][0] == "M" and iter[0][1] == "R":
-				readQuorumSize = iter[1]
-			elif iter[0][0] == "M" and iter[0][1] == "W":
-				writeQuorumSize = iter[1]
-			elif iter[0][0] == "C":
-				if dcIndexMap[iter[0][1]] not in listOfReplicas:
-					listOfReplicas.append(dcIndexMap[iter[0][1]])
-			elif iter[0][0] == "R" or iter[0][0] == "W":
-				if dcIndexMap[iter[0][1]] not in accessSet:
-					accessSet.append(dcIndexMap[iter[0][1]])
+    parsedConfigFile = ReadConfigFile(configFile)
+    for iter in parsedConfigFile:
+        if len(iter[0]) >= 2:
+            if iter[0][0] == "M" and iter[0][1] == "R":
+                readQuorumSize = iter[1]
+            elif iter[0][0] == "M" and iter[0][1] == "W":
+                writeQuorumSize = iter[1]
+            elif iter[0][0] == "C":
+                if dcIndexMap[iter[0][1]] not in listOfReplicas:
+                    listOfReplicas.append(dcIndexMap[iter[0][1]])
+            elif iter[0][0] == "R" or iter[0][0] == "W":
+                if dcIndexMap[iter[0][1]] not in accessSet:
+                    accessSet.append(dcIndexMap[iter[0][1]])
 
-	print "Read quorum size", readQuorumSize
-	print "Write quorum size", writeQuorumSize
-	print "Access set", accessSet
-	print "List of replicas", listOfReplicas
+    print "Read quorum size", readQuorumSize
+    print "Write quorum size", writeQuorumSize
+    print "Access set", accessSet
+    print "List of replicas", listOfReplicas
 
-	if quorumSystem == "b":
-		outputFileName = 'results/' + 'latency_' + quorumSystem + '_' + str(numberOfRequests)
-		if not os.path.exists(os.path.dirname(outputFileName)):
-			try:
-				os.makedirs(os.path.dirname(outputFileName))
-			except OSError as exc: # Guard against race condition
-				if exc.errno != errno.EEXIST:
-					raise
-		outputFile = open(outputFileName, 'w')
-		for _ in range(numberOfRequests):
-			frontend = random.choice(accessSet)
-			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, readQuorumSize)
-			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, readQuorumSize, writeQuorumSize, FLEXIBLE_PAXOS)
-			outputFile.write("get " + str(sampleGet) + " put " + str(samplePut) + "\n")
+    quorumSystem = Quorumsystem(quorumType, networkLatencies, storageLatencies, accessSet, listOfReplicas, readQuorumSize, writeQuorumSize, FLEXIBLE_PAXOS)
+    outputFileName = 'results/' + 'latency_' + quorumType + '_' + str(numberOfRequests)
+    if not os.path.exists(os.path.dirname(outputFileName)):
+        try:
+            os.makedirs(os.path.dirname(outputFileName))
+        except OSError as exc: # Guard against race condition
+            if exc.errno != errno.EEXIST:
+                raise
+    outputFile = open(outputFileName, 'w')
+    for _ in range(numberOfRequests):
+        sampleGet = quorumSystem.issueRequest("get")
+        samplePut = quorumSystem.issueRequest("put")
+        outputFile.write("get " + str(sampleGet) + " put " + str(samplePut) + "\n")
 
 
 
 if __name__ == '__main__':
-	main()
+    main()
