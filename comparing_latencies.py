@@ -176,22 +176,38 @@ def GetRequestGenerator(networkLatencies, readStorageLatencies, randomFrontEnd, 
 	getLatencies.sort()
 	return getLatencies[-1]
 
-def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, listOfReplicas, readQuorumSize, writeQuorumSize):
+def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, listOfReplicas, readQuorumSize, writeQuorumSize, useFlexiblePaxos):
 	sampledNetworkLatencies = {}
 	sampledStorageLatencies = {}
 	totalLinkLatency = {}
-	for dc in listOfReplicas:
-		# print "network latency", networkLatencies[randomFrontEnd][dc][:10]
-		sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
-		# print "storage latency", storageLatencies[0][dc][:10]
-		sampledStorageLatencies[dc] = random.choice(storageLatencies[0][dc])
-		# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
-		totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
 
-	readQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), readQuorumSize)]
-	getLatencies = [totalLinkLatency[i] for i in readQuorum]
-	getLatencies.sort()
-	phase1Latency = getLatencies[-1]
+	if useFlexiblePaxos:
+		for dc in listOfReplicas:
+			# print "network latency", networkLatencies[randomFrontEnd][dc][:10]
+			sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
+			# print "storage latency", storageLatencies[0][dc][:10]
+			sampledStorageLatencies[dc] = random.choice(storageLatencies[0][dc])
+			# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
+			totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
+
+		readQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), readQuorumSize)]
+		getLatencies = [totalLinkLatency[i] for i in readQuorum]
+		getLatencies.sort()
+		phase1Latency = getLatencies[-1]
+
+	else:
+		for dc in listOfReplicas:
+			# print "network latency", networkLatencies[randomFrontEnd][dc][:10]
+			sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
+			# print "storage latency", storageLatencies[0][dc][:10]
+			sampledStorageLatencies[dc] = random.choice(storageLatencies[1][dc])
+			# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
+			totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
+
+		writeQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), writeQuorumSize)]
+		putLatencies = [totalLinkLatency[i] for i in writeQuorum]
+		putLatencies.sort()
+		phase1Latency = putLatencies[-1]
 
 	# clarify whether use the same links or not as the front end is the same
 	sampledNetworkLatencies = {}
@@ -227,6 +243,9 @@ def main():
 	writeQuorumSize = 0
 	accessSet = []
 	listOfReplicas = []
+
+	FLEXIBLE_PAXOS = False
+
 	parsedConfigFile = ReadConfigFile(configFile)
 	for iter in parsedConfigFile:
 		if len(iter[0]) >= 2:
@@ -258,7 +277,7 @@ def main():
 		for _ in range(numberOfRequests):
 			frontend = random.choice(accessSet)
 			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, readQuorumSize)
-			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, readQuorumSize, writeQuorumSize)
+			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, readQuorumSize, writeQuorumSize, FLEXIBLE_PAXOS)
 			outputFile.write("get " + str(sampleGet) + " put " + str(samplePut) + "\n")
 
 
