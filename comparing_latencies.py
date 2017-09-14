@@ -6,6 +6,7 @@ from os import listdir
 import xml.etree.ElementTree as et
 import random
 import os
+import argparse
 
 NET_LATENCIES_LOG = '/vault-home/goelayu/NSDI17/goelayu/with-missing-gc-reg/located-ping-times.txt'
 STORE_LATENCIES_TOP = '/vault-home/uluyol/paxosstore-results/sm-100K/'
@@ -350,15 +351,16 @@ def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, list
 def main():
 	# make execution deterministic
 	random.seed(0)
-	if len(sys.argv) < 3:
-		print "Invalid argument"
-		print "Usage: python compare_latencies.py <path to config file> <quorum system | -b,-p,-rd> [number of requests, default=50k]"
-		return
-	configFile = sys.argv[1]
-	quorumSystem = sys.argv[2][1:]
-	numberOfRequests = 50000
-	if len(sys.argv) == 4:
-		numberOfRequests = int(sys.argv[3])
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--quorum-system", default="basic")
+	parser.add_argument("--op-count", default=50000, type=int)
+	parser.add_argument("configpath")
+	parser.add_argument("outputpath")
+	args = parser.parse_args()
+
+	configFile = args.configpath
+	quorumSystem = args.quorum_system
+	numberOfRequests = args.op_count
 
 	networkLatencies = ReadNetworkLatencies()
 	storageLatencies = ReadStorageLatencies()
@@ -388,15 +390,14 @@ def main():
 	print "Access set", accessSet
 	print "List of replicas", listOfReplicas
 
-	if quorumSystem == "b":
-		outputFileName = 'results/' + 'latency_' + quorumSystem + '_' + str(numberOfRequests)
-		if not os.path.exists(os.path.dirname(outputFileName)):
+	if quorumSystem == "basic":
+		if not os.path.exists(os.path.dirname(args.outputpath)):
 			try:
-				os.makedirs(os.path.dirname(outputFileName))
+				os.makedirs(os.path.dirname(args.outputpath))
 			except OSError as exc: # Guard against race condition
 				if exc.errno != errno.EEXIST:
 					raise
-		outputFile = open(outputFileName, 'w')
+		outputFile = open(args.outputpath, 'w')
 		quorumSystem = BasicQuorumSystem(readQuorumSize, writeQuorumSize)
 		for _ in range(numberOfRequests):
 			frontend = random.choice(accessSet)
