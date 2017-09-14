@@ -61,6 +61,115 @@ dcIndexMap = {
   '45': 'gc/us-west1',
 }
 
+class QuorumSystem(object):
+	def readLatency(self, replicaNames, replicaLatencies):
+		raise NotImplementedError
+
+	def writeLatency(self, replicaNames, replicaLatencies):
+		raise NotImplementedError
+
+	def useReqPerSplit(self):
+		raise NotImplementedError
+
+class BasicQuorumSystem(object):
+	def __init__(self, qrSize, qwSize):
+		self._readQuorumSize = qrSize
+		self._writeQuorumSize = qwSize
+
+	def readLatency(self, _, replicaLatencies):
+		replicaLatencies.sort()
+		return replicaLatencies[self._readQuorumSize]
+
+	def writeLatency(self, _, replicaLatencies):
+		replicaLatencies.sort()
+		return replicaLatencies[self._writeQuorumSize]
+
+	def useReqPerSplit(self):
+		return False
+
+class SpecifiedQuorumSystem(object):
+	def __init__(self, readQuorums, writeQuorums):
+		self._readQuorums = readQuorums # type: List[Set[str]]
+		self._writeQuorums = writeQuorums # type: List[Set[str]]
+
+	def readLatency(self, replicaNames, replicaLatencies):
+		qlats = []
+		for _ in self._readQuorums:
+			qlats.append(-1.0)
+		for i in range(len(replicaNames)):
+			n = replicaNames[i]
+			for j in range(len(self._readQuorums)):
+				if n in self._readQuorums[j]:
+					qlats[j] = max(qlats[j], replicaLatencies[i])
+		return min(l for l in qlats if l >= 0)
+
+	def writeLatency(self, replicaNames, replicaLatencies):
+		qlats = []
+		for _ in self._writeQuorums:
+			qlats.append(-1.0)
+		for i in range(len(replicaNames)):
+			n = replicaNames[i]
+			for j in range(len(self._writeQuorums)):
+				if n in self._writeQuorums[j]:
+					qlats[j] = max(qlats[j], replicaLatencies[i])
+		return min(l for l in qlats if l >= 0)
+
+	def useReqPerSplit(self):
+		return False
+
+class SpecifiedRPSQuorumSystem(object):
+	def __init__(self, splitsPerReplica, readQuorums, writeQuorums, readExtra, writeExtra):
+		self._readQuorums = readQuorums # type: List[Set[str]]
+		self._writeQuorums = writeQuorums # type: List[Set[str]]
+		self._readExtra = readExtra
+		self._writeExtra = writeExtra
+		self._readQuorumSplits = []
+		for q in self._readQuorums:
+			c = 0
+			for r in q:
+				c += splitsPerReplica[r]
+			self._readQuorumSplits.append(c)
+		self._writeQuorumSplits = []
+		for q in self._writeQuorums:
+			c = 0
+			for r in q:
+				c += splitsPerReplica[r]
+			self._writeQuorumSplits.append(c)
+
+	def readLatency(self, replicaNames, replicaLatencies):
+		qlats = []
+		for _ in self._readQuorums:
+			qlats.append([])
+		for i in range(len(replicaNames)):
+			n = replicaNames[i]
+			for j in range(len(self._readQuorums)):
+				if n in self._readQuorums[j]:
+					qlats[j].append(replicaLatencies[j])
+		minLat = float("inf")
+		for i in range(len(qlats)):
+			assert len(qlats[i]) == self._readQuorumSplits[i]
+			qlats[i].sort()
+			minLat = min(minLat, qlats[i][-1-self._readExtra])
+		return minLat
+
+	def writeLatency(self, replicaNames, replicaLatencies):
+		qlats = []
+		for _ in self._writeQuorums:
+			qlats.append([])
+		for i in range(len(replicaNames)):
+			n = replicaNames[i]
+			for j in range(len(self._writeQuorums)):
+				if n in self._writeQuorums[j]:
+					qlats[j].append(replicaLatencies[j])
+		minLat = float("inf")
+		for i in range(len(qlats)):
+			assert len(qlats[i]) == self._writeQuorumSplits[i]
+			qlats[i].sort()
+			minLat = min(minLat, qlats[i][-1-self._writeExtra])
+		return minLat
+
+	def useReqPerSplit(self):
+		return True
 
 def ReadNetworkLatencies():
 	"""
@@ -159,72 +268,52 @@ def ReadConfigFile(solution_file):
 			items = line.attrib["name"].split("_")
 			yield tuple(items), val
 
-def GetRequestGenerator(networkLatencies, readStorageLatencies, randomFrontEnd, listOfReplicas, readQuorumSize):
-	sampledNetworkLatencies = {}
-	sampledStorageLatencies = {}
-	totalLinkLatency = {}
+def GetRequestGenerator(networkLatencies, readStorageLatencies, randomFrontEnd, listOfReplicas, quorumSystem):
+	replicaNames = []
+	replicaLatencies = []
 	for dc in listOfReplicas:
-		sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
-		sampledStorageLatencies[dc] = random.choice(readStorageLatencies[dc])
-		# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
-		totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
+		networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+		storageLatency = random.choice(readStorageLatencies[dc])
+		replicaNames.append(dc)
+		replicaLatencies.append(networkLatency + storageLatency)
 
-	readQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), readQuorumSize)]
+	return quorumSystem.readLatency(replicaNames, replicaLatencies)
 
-	getLatencies = [totalLinkLatency[i] for i in readQuorum]
-
-	getLatencies.sort()
-	return getLatencies[-1]
-
-def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, listOfReplicas, readQuorumSize, writeQuorumSize, useFlexiblePaxos):
-	sampledNetworkLatencies = {}
-	sampledStorageLatencies = {}
-	totalLinkLatency = {}
-
+def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, listOfReplicas, quorumSystem, useFlexiblePaxos):
+	latency = 0
 	if useFlexiblePaxos:
+		replicaNames = []
+		replicaLatencies = []
 		for dc in listOfReplicas:
-			# print "network latency", networkLatencies[randomFrontEnd][dc][:10]
-			sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
-			# print "storage latency", storageLatencies[0][dc][:10]
-			sampledStorageLatencies[dc] = random.choice(storageLatencies[0][dc])
-			# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
-			totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
+			networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+			storageLatency = random.choice(storageLatencies[0][dc])
+			replicaNames.append(dc)
+			replicaLatencies.append(networkLatency + storageLatency)
 
-		readQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), readQuorumSize)]
-		getLatencies = [totalLinkLatency[i] for i in readQuorum]
-		getLatencies.sort()
-		phase1Latency = getLatencies[-1]
-
+		latency += quorumSystem.readLatency(replicaNames, replicaLatencies)
 	else:
+		replicaNames = []
+		replicaLatencies = []
 		for dc in listOfReplicas:
-			# print "network latency", networkLatencies[randomFrontEnd][dc][:10]
-			sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
-			# print "storage latency", storageLatencies[0][dc][:10]
-			sampledStorageLatencies[dc] = random.choice(storageLatencies[1][dc])
-			# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
-			totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
+			networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+			storageLatency = random.choice(storageLatencies[0][dc])
+			replicaNames.append(dc)
+			replicaLatencies.append(networkLatency + storageLatency)
 
-		writeQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), writeQuorumSize)]
-		putLatencies = [totalLinkLatency[i] for i in writeQuorum]
-		putLatencies.sort()
-		phase1Latency = putLatencies[-1]
+		latency += quorumSystem.writeLatency(replicaNames, replicaLatencies)
 
-	# clarify whether use the same links or not as the front end is the same
-	sampledNetworkLatencies = {}
-	sampledStorageLatencies = {}
-	totalLinkLatency = {}
+
+	replicaNames = []
+	replicaLatencies = []
 	for dc in listOfReplicas:
-		sampledNetworkLatencies[dc] = random.choice(networkLatencies[randomFrontEnd][dc])
-		sampledStorageLatencies[dc] = random.choice(storageLatencies[1][dc])
-		# print sampledNetworkLatencies[dc], sampledNetworkLatencies[dc]
-		totalLinkLatency[dc] = float(sampledNetworkLatencies[dc]) + float(sampledStorageLatencies[dc])
+		networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+		storageLatency = random.choice(storageLatencies[1][dc])
+		replicaNames.append(dc)
+		replicaLatencies.append(networkLatency + storageLatency)
 
-	writeQuorum = [listOfReplicas[i] for i in random.sample(xrange(len(listOfReplicas)), writeQuorumSize)]
-	putLatencies = [totalLinkLatency[i] for i in writeQuorum]
-	putLatencies.sort()
-	phase2Latency = putLatencies[-1]
+	latency += quorumSystem.writeLatency(replicaNames, replicaLatencies)
 
-	return phase1Latency + phase2Latency
+	return latency
 
 def main():
 	if len(sys.argv) < 3:
@@ -274,10 +363,11 @@ def main():
 				if exc.errno != errno.EEXIST:
 					raise
 		outputFile = open(outputFileName, 'w')
+		quorumSystem = BasicQuorumSystem(readQuorumSize, writeQuorumSize)
 		for _ in range(numberOfRequests):
 			frontend = random.choice(accessSet)
-			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, readQuorumSize)
-			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, readQuorumSize, writeQuorumSize, FLEXIBLE_PAXOS)
+			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, quorumSystem)
+			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, quorumSystem, FLEXIBLE_PAXOS)
 			outputFile.write("get " + str(sampleGet) + " put " + str(samplePut) + "\n")
 
 
