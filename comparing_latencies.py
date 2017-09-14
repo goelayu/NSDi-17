@@ -268,54 +268,88 @@ def ReadConfigFile(solution_file):
 			items = line.attrib["name"].split("_")
 			yield tuple(items), val
 
-def GetRequestGenerator(networkLatencies, readStorageLatencies, randomFrontEnd, listOfReplicas, quorumSystem):
+def GetRequestGenerator(networkLatencies, readStorageLatencies, randomFrontEnd, listOfReplicas, quorumSystem, numberOfSplits):
 	replicaNames = []
 	replicaLatencies = []
-	for dc in listOfReplicas:
-		networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
-		storageLatency = random.choice(readStorageLatencies[dc])
-		replicaNames.append(dc)
-		replicaLatencies.append(networkLatency + storageLatency)
+	if quorumSystem.useReqPerSplit():
+		for dc in listOfReplicas:
+			for _ in range(numberOfSplits(dc)):
+				networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+				storageLatency = random.choice(readStorageLatencies[dc])
+				replicaNames.append(dc)
+				replicaLatencies.append(networkLatency + storageLatency)
+	else:
+		for dc in listOfReplicas:
+			networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+			storageLatency = random.choice(readStorageLatencies[dc])
+			replicaNames.append(dc)
+			replicaLatencies.append(networkLatency + storageLatency)
 
 	return quorumSystem.readLatency(replicaNames, replicaLatencies)
 
-def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, listOfReplicas, quorumSystem, useFlexiblePaxos):
+def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, listOfReplicas, quorumSystem, numberOfSplits, useFlexiblePaxos):
 	latency = 0
 	if useFlexiblePaxos:
 		replicaNames = []
 		replicaLatencies = []
-		for dc in listOfReplicas:
-			networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
-			storageLatency = random.choice(storageLatencies[0][dc])
-			replicaNames.append(dc)
-			replicaLatencies.append(networkLatency + storageLatency)
+		if quorumSystem.useReqPerSplit():
+			for dc in listOfReplicas:
+				for _ in range(numberOfSplits(dc)):
+					networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+					storageLatency = random.choice(storageLatencies[0][dc])
+					replicaNames.append(dc)
+					replicaLatencies.append(networkLatency + storageLatency)
+		else:
+			for dc in listOfReplicas:
+				networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+				storageLatency = random.choice(storageLatencies[0][dc])
+				replicaNames.append(dc)
+				replicaLatencies.append(networkLatency + storageLatency)
 
 		latency += quorumSystem.readLatency(replicaNames, replicaLatencies)
 	else:
 		replicaNames = []
 		replicaLatencies = []
-		for dc in listOfReplicas:
-			networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
-			storageLatency = random.choice(storageLatencies[0][dc])
-			replicaNames.append(dc)
-			replicaLatencies.append(networkLatency + storageLatency)
+		if quorumSystem.useReqPerSplit():
+			for dc in listOfReplicas:
+				for _ in range(numberOfSplits(dc)):
+					networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+					storageLatency = random.choice(storageLatencies[0][dc])
+					replicaNames.append(dc)
+					replicaLatencies.append(networkLatency + storageLatency)
+		else:
+			for dc in listOfReplicas:
+				networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+				storageLatency = random.choice(storageLatencies[0][dc])
+				replicaNames.append(dc)
+				replicaLatencies.append(networkLatency + storageLatency)
 
 		latency += quorumSystem.writeLatency(replicaNames, replicaLatencies)
 
 
 	replicaNames = []
 	replicaLatencies = []
-	for dc in listOfReplicas:
-		networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
-		storageLatency = random.choice(storageLatencies[1][dc])
-		replicaNames.append(dc)
-		replicaLatencies.append(networkLatency + storageLatency)
+	if quorumSystem.useReqPerSplit():
+		for dc in listOfReplicas:
+			for _ in range(numberOfSplits(dc)):
+				networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+				storageLatency = random.choice(storageLatencies[1][dc])
+				replicaNames.append(dc)
+				replicaLatencies.append(networkLatency + storageLatency)
+	else:
+		for dc in listOfReplicas:
+			networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
+			storageLatency = random.choice(storageLatencies[1][dc])
+			replicaNames.append(dc)
+			replicaLatencies.append(networkLatency + storageLatency)
 
 	latency += quorumSystem.writeLatency(replicaNames, replicaLatencies)
 
 	return latency
 
 def main():
+	# make execution deterministic
+	random.seed(0)
 	if len(sys.argv) < 3:
 		print "Invalid argument"
 		print "Usage: python compare_latencies.py <path to config file> <quorum system | -b,-p,-rd> [number of requests, default=50k]"
@@ -366,8 +400,8 @@ def main():
 		quorumSystem = BasicQuorumSystem(readQuorumSize, writeQuorumSize)
 		for _ in range(numberOfRequests):
 			frontend = random.choice(accessSet)
-			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, quorumSystem)
-			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, quorumSystem, FLEXIBLE_PAXOS)
+			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, quorumSystem, {})
+			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, quorumSystem, {}, FLEXIBLE_PAXOS)
 			outputFile.write("get " + str(sampleGet) + " put " + str(samplePut) + "\n")
 
 
