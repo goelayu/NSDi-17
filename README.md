@@ -1,6 +1,18 @@
 # Simulator
 
- - Usage: `./compare_latencies.py <path to config file> <qourum system | -b,-p,-rd> [number of requests, default=50k]`
- - Produces an output file of the format `results/latency_<qourumSystem>_<numberOfRequests>`
+```
+usage: comparing_latencies.py [-h] [--op-count OP_COUNT] configpath outputpath
+
+positional arguments:
+  configpath
+  outputpath
+
+optional arguments:
+  -h, --help           show this help message and exit
+  --op-count OP_COUNT
+ ```
+
+ - Supports basic, specific and specificRPS quorum systems
+ - Default number of operations 50000
+ - Default quorum type is basic
  
-Currently supports only basic qourum system
