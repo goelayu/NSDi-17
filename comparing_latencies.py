@@ -6,6 +6,7 @@ import xml.etree.ElementTree as et
 import random
 import os
 import argparse
+from random import randint
 
 NET_LATENCIES_LOG = '/vault-home/goelayu/NSDI17/goelayu/with-missing-gc-reg/located-ping-times.txt'
 #NET_LATENCIES_LOG = '/w/uluyol/located-ping-times.txt'
@@ -60,6 +61,23 @@ dcIndexMap = {
   '43': 'gc/us-central1',
   '44': 'gc/us-east1',
   '45': 'gc/us-west1',
+}
+
+soundCloudCDF = {
+	0 : '0',
+	53 : '1',
+	59 : '2',
+	64 : '3',
+	67 : '4',
+	70 : '5',
+	72 : '6',
+	73 : '7',
+	74 : '8',
+	75 : '9',
+	85 : '10,20',
+	88 : '20,25',
+	98 : '25,100',
+	100 : '100,2000',
 }
 
 class QuorumSystem(object):
@@ -171,6 +189,22 @@ class SpecifiedRPSQuorumSystem(object):
 
 	def useReqPerSplit(self):
 		return True
+
+def GetKeySizeFromCDF():
+	rand = randint(0, 100)
+	bracket = 0
+	for key in soundCloudCDF.keys():
+		if key > rand:
+			bracket = prev
+		prev = key
+
+	if len(soundCloudCDF[bracket]) > 1:
+		limits = soundCloudCDF[bracket].split(',')
+		keysize = randint(int(limits[0]), int(limits[1]))
+		return keysize
+	else:
+		return int(soundCloudCDF[bracket])
+
 
 def ReadNetworkLatencies():
 	"""
@@ -371,11 +405,13 @@ def main():
 	parser.add_argument("--op-count", default=50000, type=int)
 	parser.add_argument("configpath")
 	parser.add_argument("outputpath")
+	parser.add_argument("--multi-get", default=False, type=bool)
 	args = parser.parse_args()
 
 	FLEXIBLE_PAXOS = None
 	configFile = args.configpath
 	numberOfRequests = args.op_count
+	multiGetEnabled = args.multi_get
 
 	if "fixautosplit" in configFile or "splitsasym-auto" in configFile:
 		quorumSystem = "basic"
@@ -444,6 +480,21 @@ def main():
 			if exc.errno != errno.EEXIST:
 				raise
 	outputFile = open(args.outputpath, 'w')
+
+	if multiGetEnabled:
+		quorumSystem = BasicQuorumSystem(readQuorumSize, writeQuorumSize)
+		frontend = random.choice(accessSet)
+		for _ in range(numberOfRequests):
+			keySize = GetKeySizeFromCDF()
+			#qqprint "Keysize obtrained", keySize
+			latencyList = []
+			for _ in range(keySize):
+				latency = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, quorumSystem, {})
+				latencyList.append(latency)
+			if not latencyList:
+				outputFile.write('0')
+			else: outputFile.write(str(min(latencyList)) + "\n")
+		return
 
 	if quorumSystem == "basic":
 		print "Runnning siumlation for basic quorum system..."
