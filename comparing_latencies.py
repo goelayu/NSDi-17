@@ -206,7 +206,7 @@ def GetKeySizeFromCDF():
 		return int(soundCloudCDF[bracket])
 
 
-def ReadNetworkLatencies():
+def ReadNetworkLatencies(listOfReplicas, accessSet):
 	"""
 	Reads network latencies from the given file
 	More information about file format inside /vault-home/uluyol/paxosstore-results/README
@@ -223,7 +223,7 @@ def ReadNetworkLatencies():
 		latency = lineData[0]
 
 
-		if latency != "error":
+		if latency != "error" and dc1 in listOfReplicas or dc1 in accessSet:
 			if dc1 not in latencies:
 				latencies[dc1] = {}
 			if dc2 not in latencies[dc1]:
@@ -242,7 +242,7 @@ def ReadNetworkLatencies():
 	# print valueCount
 	return latencies
 
-def ReadStorageLatencies():
+def ReadStorageLatencies(listOfReplicas, accessSet):
 	"""
 	Reads storage latencies from the given file
 	More information about file format inside /vault-home/uluyol/paxosstore-results/README
@@ -258,7 +258,7 @@ def ReadStorageLatencies():
 			status = lineData[0]
 			latency = lineData[3]
 
-			if status == "success":
+			if status == "success" and dc in listOfReplicas or dc in accessSet:
 				dcKey = dc.replace("-", "/", 1)
 				if dcKey not in readLatency:
 					readLatency[dcKey] = []
@@ -429,8 +429,6 @@ def main():
 		print "Error: Invalid nomenclature for the config file name"
 		return
 
-	networkLatencies = ReadNetworkLatencies()
-	storageLatencies = ReadStorageLatencies()
 	readQuorumSize = 0
 	writeQuorumSize = 0
 	accessSet = []
@@ -440,6 +438,7 @@ def main():
 	specificWriteQuorums = [None] * 46 #Same reason
 
 	parsedConfigFile = ReadConfigFile(configFile)
+
 	for iter in parsedConfigFile:
 		if len(iter[0]) == 2 and iter[0][0] == "M" and iter[0][1] == "R":
 			readQuorumSize = iter[1]
@@ -464,6 +463,9 @@ def main():
 				specificWriteQuorums[int(iter[0][1])].append(dcIndexMap[iter[0][2]])
 		elif len(iter[0]) == 2 and iter[0][0] == "SPLITS":
 			numberOfSplits[dcIndexMap[iter[0][1]]] = iter[1]
+
+	networkLatencies = ReadNetworkLatencies(listOfReplicas, accessSet)
+	storageLatencies = ReadStorageLatencies(listOfReplicas, accessSet)
 
 	specificReadQuorums = [q for q in specificReadQuorums if q]
 	specificWriteQuorums = [q for q in specificWriteQuorums if q]
