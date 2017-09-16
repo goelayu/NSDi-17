@@ -163,7 +163,7 @@ class SpecifiedRPSQuorumSystem(object):
 			n = replicaNames[i]
 			for j in range(len(self._readQuorums)):
 				if n in self._readQuorums[j]:
-					qlats[j].append(replicaLatencies[j])
+					qlats[j].append(replicaLatencies[i])
 		minLat = float("inf")
 		for i in range(len(qlats)):
 			assert len(qlats[i]) == self._readQuorumSplits[i]
@@ -179,7 +179,7 @@ class SpecifiedRPSQuorumSystem(object):
 			n = replicaNames[i]
 			for j in range(len(self._writeQuorums)):
 				if n in self._writeQuorums[j]:
-					qlats[j].append(replicaLatencies[j])
+					qlats[j].append(replicaLatencies[i])
 		minLat = float("inf")
 		for i in range(len(qlats)):
 			assert len(qlats[i]) == self._writeQuorumSplits[i]
@@ -308,7 +308,7 @@ def GetRequestGenerator(networkLatencies, readStorageLatencies, randomFrontEnd, 
 	replicaLatencies = []
 	if quorumSystem.useReqPerSplit():
 		for dc in listOfReplicas:
-			for _ in range(numberOfSplits(dc)):
+			for _ in range(numberOfSplits[dc]):
 				networkLatency = 0
 				if dc != randomFrontEnd:
 					networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
@@ -333,7 +333,7 @@ def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, list
 		replicaLatencies = []
 		if quorumSystem.useReqPerSplit():
 			for dc in listOfReplicas:
-				for _ in range(numberOfSplits(dc)):
+				for _ in range(numberOfSplits[dc]):
 					networkLatency = 0
 					if dc != randomFrontEnd:
 						networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
@@ -355,7 +355,7 @@ def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, list
 		replicaLatencies = []
 		if quorumSystem.useReqPerSplit():
 			for dc in listOfReplicas:
-				for _ in range(numberOfSplits(dc)):
+				for _ in range(numberOfSplits[dc]):
 					networkLatency = 0
 					if dc != randomFrontEnd:
 						networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
@@ -378,7 +378,7 @@ def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, list
 	replicaLatencies = []
 	if quorumSystem.useReqPerSplit():
 		for dc in listOfReplicas:
-			for _ in range(numberOfSplits(dc)):
+			for _ in range(numberOfSplits[dc]):
 				networkLatency = 0
 				if dc != randomFrontEnd:
 					networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
@@ -419,11 +419,11 @@ def main():
 	elif "flexbasic" in configFile:
 		quorumSystem = "basic"
 		FLEXIBLE_PAXOS = True
-	elif "flexgen" in configFile:
-		quorumSystem = "spec"
-		FLEXIBLE_PAXOS = True
 	elif "flexgenexp" in configFile:
 		quorumSystem = "specrps"
+		FLEXIBLE_PAXOS = True
+	elif "flexgen" in configFile:
+		quorumSystem = "spec"
 		FLEXIBLE_PAXOS = True
 	else:
 		print "Error: Invalid nomenclature for the config file name"
@@ -464,6 +464,9 @@ def main():
 				specificWriteQuorums[int(iter[0][1])].append(dcIndexMap[iter[0][2]])
 		elif len(iter[0]) == 2 and iter[0][0] == "SPLITS":
 			numberOfSplits[dcIndexMap[iter[0][1]]] = iter[1]
+
+	specificReadQuorums = [q for q in specificReadQuorums if q]
+	specificWriteQuorums = [q for q in specificWriteQuorums if q]
 
 	print "Read quorum size", readQuorumSize
 	print "Write quorum size", writeQuorumSize
