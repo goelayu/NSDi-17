@@ -258,8 +258,8 @@ def ReadStorageLatencies(listOfReplicas, accessSet):
 			status = lineData[0]
 			latency = lineData[3]
 
-			if status == "success" and dc in listOfReplicas or dc in accessSet:
-				dcKey = dc.replace("-", "/", 1)
+			dcKey = dc.replace("-", "/", 1)
+			if status == "success" and dcKey in listOfReplicas or dcKey in accessSet:
 				if dcKey not in readLatency:
 					readLatency[dcKey] = []
 				try:
@@ -274,8 +274,8 @@ def ReadStorageLatencies(listOfReplicas, accessSet):
 			status = lineData[0]
 			latency = lineData[3]
 
-			if status == "success":
-				dcKey = dc.replace("-", "/", 1)
+			dcKey = dc.replace("-", "/", 1)
+			if status == "success" and dcKey in listOfReplicas or dcKey in accessSet:
 				if dcKey not in writeLatency:
 					writeLatency[dcKey] = []
 				try:
