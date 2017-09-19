@@ -7,6 +7,7 @@ import random
 import os
 import argparse
 from random import randint
+import collections
 
 NET_LATENCIES_LOG = '/vault-home/goelayu/NSDI17/goelayu/with-missing-gc-reg/located-ping-times.txt'
 #NET_LATENCIES_LOG = '/w/uluyol/located-ping-times.txt'
@@ -64,7 +65,6 @@ dcIndexMap = {
 }
 
 soundCloudCDF = {
-	0 : '0',
 	53 : '1',
 	59 : '2',
 	64 : '3',
@@ -191,19 +191,23 @@ class SpecifiedRPSQuorumSystem(object):
 		return True
 
 def GetKeySizeFromCDF():
+	soundCloudCDFOrdered = collections.OrderedDict(sorted(soundCloudCDF.items()))
 	rand = randint(0, 100)
 	bracket = 0
-	for key in soundCloudCDF.keys():
-		if key > rand:
-			bracket = prev
-		prev = key
+	for key in soundCloudCDFOrdered.keys():
+		if key >= rand:
+			bracket = key
+			break
+	# print "Bracket", bracket
 
-	if len(soundCloudCDF[bracket]) > 1:
-		limits = soundCloudCDF[bracket].split(',')
+	if len(soundCloudCDFOrdered[bracket]) > 1:
+		limits = soundCloudCDFOrdered[bracket].split(',')
 		keysize = randint(int(limits[0]), int(limits[1]))
+		# print keysize
 		return keysize
 	else:
-		return int(soundCloudCDF[bracket])
+		# print soundCloudCDFOrdered[bracket]
+		return int(soundCloudCDFOrdered[bracket])
 
 
 def ReadNetworkLatencies(listOfReplicas, accessSet):
