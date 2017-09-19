@@ -8,6 +8,7 @@ import os
 import argparse
 from random import randint
 import collections
+import math
 
 NET_LATENCIES_LOG = '/vault-home/goelayu/NSDI17/goelayu/with-missing-gc-reg/located-ping-times.txt'
 #NET_LATENCIES_LOG = '/w/uluyol/located-ping-times.txt'
@@ -402,6 +403,32 @@ def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, list
 
 	return latency
 
+def drange(start, stop, step):
+     r = start
+     while r < stop:
+         yield r
+         r += step
+	
+def get_percentile(vals, pct):
+	if not vals:
+		return float('nan')
+	k = float(len(vals)-1) * pct
+	f = math.floor(k)
+	c = math.ceil(k)
+	if f == c:
+		return vals[int(k)]
+	d0 = vals[int(f)] * (c - k)
+	d1 = vals[int(c)] * (k - f)
+	return d0 + d1
+
+def writeOutput(data1, data2, file):
+	for frontend in data1:
+		for pct in drange(0,1,0.01):
+			file.write("get" + "," + str(get_percentile(data1[frontend],pct)) + "," + frontend + "," + str(pct) + "\n")
+	for frontend in data2:
+		for pct in drange(0,1,0.01):
+			file.write("put" + "," + str(get_percentile(data2[frontend],pct)) + "," + frontend + "," + str(pct) + "\n")
+
 def main():
 	# make execution deterministic
 	random.seed(0)
@@ -490,10 +517,16 @@ def main():
 				raise
 	outputFile = open(args.outputpath, 'w')
 
+	getLatencyPerFrontEnd = {}
+	putLatencyPerFrontEnd = {}
+
 	if multiGetEnabled:
 		quorumSystem = BasicQuorumSystem(readQuorumSize, writeQuorumSize)
-		frontend = random.choice(accessSet)
+		getLatencyPerFrontEnd["aggregate"] = []
 		for _ in range(numberOfRequests):
+			frontend = random.choice(accessSet)
+			if frontend not in getLatencyPerFrontEnd:
+				getLatencyPerFrontEnd[frontend] = []
 			keySize = GetKeySizeFromCDF()
 			#qqprint "Keysize obtrained", keySize
 			latencyList = []
@@ -501,18 +534,34 @@ def main():
 				latency = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, quorumSystem, {})
 				latencyList.append(latency)
 			if not latencyList:
-				outputFile.write('0')
-			else: outputFile.write(str(min(latencyList)) + "\n")
+				getLatencyPerFrontEnd[frontend].append(0)
+				getLatencyPerFrontEnd["aggregate"].append(0)
+			else: 
+				getLatencyPerFrontEnd[frontend].append(min(latencyList))
+				getLatencyPerFrontEnd["aggregate"].append(min(latencyList))
+		for frontend in getLatencyPerFrontEnd:
+			for pct in drange(0,1,0.01):
+				outputFile.write("get" + "," + str(get_percentile(getLatencyPerFrontEnd[frontend],pct)) + "," + frontend + "," + str(pct) + "\n")
 		return
 
 	if quorumSystem == "basic":
 		print "Runnning siumlation for basic quorum system..."
 		quorumSystem = BasicQuorumSystem(readQuorumSize, writeQuorumSize)
+		getLatencyPerFrontEnd["aggregate"] = []
+		putLatencyPerFrontEnd["aggregate"] = []
 		for _ in range(numberOfRequests):
 			frontend = random.choice(accessSet)
 			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, quorumSystem, {})
 			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, quorumSystem, {}, FLEXIBLE_PAXOS)
-			outputFile.write("get " + str(sampleGet) + " put " + str(samplePut) + "\n")
+			if frontend not in getLatencyPerFrontEnd:
+				getLatencyPerFrontEnd[frontend] = []
+			getLatencyPerFrontEnd[frontend].append(sampleGet)
+			getLatencyPerFrontEnd["aggregate"].append(sampleGet)
+			if frontend not in putLatencyPerFrontEnd:
+				putLatencyPerFrontEnd[frontend] = []
+			putLatencyPerFrontEnd[frontend].append(samplePut)
+			putLatencyPerFrontEnd["aggregate"].append(samplePut)
+		writeOutput(getLatencyPerFrontEnd, putLatencyPerFrontEnd, outputFile)
 
 	elif quorumSystem == "spec":
 		print "Running simmulation for specific quorum system..."
@@ -521,7 +570,15 @@ def main():
 			frontend = random.choice(accessSet)
 			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, quorumSystem, numberOfSplits)
 			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, quorumSystem, numberOfSplits, FLEXIBLE_PAXOS)
-			outputFile.write("get " + str(sampleGet) + " put " + str(samplePut) + "\n")
+			if frontend not in getLatencyPerFrontEnd:
+				getLatencyPerFrontEnd[frontend] = []
+			getLatencyPerFrontEnd[frontend].append(sampleGet)
+			getLatencyPerFrontEnd["aggregate"].append(sampleGet)
+			if frontend not in putLatencyPerFrontEnd:
+				putLatencyPerFrontEnd[frontend] = []
+			putLatencyPerFrontEnd[frontend].append(samplePut)
+			putLatencyPerFrontEnd["aggregate"].append(samplePut)
+		writeOutput(getLatencyPerFrontEnd, putLatencyPerFrontEnd, outputFile)
 
 	elif quorumSystem == "specrps":
 		print "Running simmulation for specific RPS quorum system..."
@@ -530,7 +587,15 @@ def main():
 			frontend = random.choice(accessSet)
 			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, quorumSystem, numberOfSplits)
 			samplePut = PutRequestGenerator(networkLatencies, storageLatencies, frontend, listOfReplicas, quorumSystem, numberOfSplits, FLEXIBLE_PAXOS)
-			outputFile.write("get " + str(sampleGet) + " put " + str(samplePut) + "\n")
+			if frontend not in getLatencyPerFrontEnd:
+				getLatencyPerFrontEnd[frontend] = []
+			getLatencyPerFrontEnd[frontend].append(sampleGet)
+			getLatencyPerFrontEnd["aggregate"].append(sampleGet)
+			if frontend not in putLatencyPerFrontEnd:
+				putLatencyPerFrontEnd[frontend] = []
+			putLatencyPerFrontEnd[frontend].append(samplePut)
+			putLatencyPerFrontEnd["aggregate"].append(samplePut)
+		writeOutput(getLatencyPerFrontEnd, putLatencyPerFrontEnd, outputFile)
 
 
 
