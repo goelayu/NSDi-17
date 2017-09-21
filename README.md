@@ -15,4 +15,12 @@ optional arguments:
  - Supports basic, specific and specificRPS quorum systems
  - Default number of operations 50000
  - Default quorum type is basic
+
+ # Cost analysis
+
+ ```
+ usage: ./getCost.sh <solver_replication> <solver_ecc> <solver_panda>
+ ```
+
+ 
  

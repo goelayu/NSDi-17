@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python
 
 # Storage cost , network bandwidth cost, per access cost
 import operator
@@ -175,12 +175,12 @@ def main():
     specificReadQuorums = [q for q in specificReadQuorums if q]
     specificWriteQuorums = [q for q in specificWriteQuorums if q]
 
-    print "Read quorum size", readQuorumSize
-    print "Write quorum size", writeQuorumSize
-    print "Access set", accessSet
-    print "List of replicas", listOfReplicas
-    print "read quorums", specificReadQuorums
-    print "write quorums", specificWriteQuorums
+    # print "Read quorum size", readQuorumSize
+    # print "Write quorum size", writeQuorumSize
+    # print "Access set", accessSet
+    # print "List of replicas", listOfReplicas
+    # print "read quorums", specificReadQuorums
+    # print "write quorums", specificWriteQuorums
 
     storageCost = 0
     transactionCost = 0

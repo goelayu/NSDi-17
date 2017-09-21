@@ -16,6 +16,14 @@ STORE_LATENCIES_TOP = '/vault-home/uluyol/paxosstore-results/sm-100K/'
 STORE_READ_FILE = '/store-reads.log'
 STORE_WRITE_FILE = '/store-writes.log'
 
+STORAGE_COST = 0.08 # PER GB
+TRANSACTION_READ_COST = 0.004  #PER 10000 TRANSACTIONS
+TRANSACTION_WRITE_COST = 0.05 
+BANDWIDTH_COST = 0.08
+DATA_SIZE = 10
+
+
+
 dcIndexMap = {
   '0': 'aws/ap-northeast-1',
   '1': 'aws/ap-northeast-2',
@@ -216,7 +224,7 @@ def ReadNetworkLatencies(listOfReplicas, accessSet):
 	Reads network latencies from the given file
 	More information about file format inside /vault-home/uluyol/paxosstore-results/README
 	"""
-	print "Reading network latency file..."
+	# print "Reading network latency file..."
 	latencies = {}
 	latencyFile = open(NET_LATENCIES_LOG, 'r')
 	# errorCount = 0
@@ -252,7 +260,7 @@ def ReadStorageLatencies(listOfReplicas, accessSet):
 	Reads storage latencies from the given file
 	More information about file format inside /vault-home/uluyol/paxosstore-results/README
 	"""
-	print "Reading storage latency file..."
+	# print "Reading storage latency file..."
 	readLatency = {}
 	writeLatency = {}
 	datacenters = listdir(STORE_LATENCIES_TOP)
@@ -364,7 +372,7 @@ def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, list
 					networkLatency = 0
 					if dc != randomFrontEnd:
 						networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
-					storageLatency = random.choice(storageLatencies[0][dc])
+					storageLatency = random.choice(storageLatencies[1][dc])
 					replicaNames.append(dc)
 					replicaLatencies.append(networkLatency + storageLatency)
 		else:
@@ -372,7 +380,7 @@ def PutRequestGenerator(networkLatencies, storageLatencies, randomFrontEnd, list
 				networkLatency = 0
 				if dc != randomFrontEnd:
 					networkLatency = random.choice(networkLatencies[randomFrontEnd][dc])
-				storageLatency = random.choice(storageLatencies[0][dc])
+				storageLatency = random.choice(storageLatencies[1][dc])
 				replicaNames.append(dc)
 				replicaLatencies.append(networkLatency + storageLatency)
 
@@ -428,6 +436,7 @@ def writeOutput(data1, data2, file):
 	for frontend in data2:
 		for pct in drange(0,1,0.01):
 			file.write("put" + "," + str(get_percentile(data2[frontend],pct)) + "," + frontend + "," + str(pct) + "\n")
+
 
 def main():
 	# make execution deterministic
@@ -501,13 +510,13 @@ def main():
 	specificReadQuorums = [q for q in specificReadQuorums if q]
 	specificWriteQuorums = [q for q in specificWriteQuorums if q]
 
-	print "Read quorum size", readQuorumSize
-	print "Write quorum size", writeQuorumSize
-	print "Access set", accessSet
-	print "List of replicas", listOfReplicas
-	print "Flexible paxos enabled", FLEXIBLE_PAXOS
-	print "read quorums", specificReadQuorums
-	print "write quorums", specificWriteQuorums
+	# print "Read quorum size", readQuorumSize
+	# print "Write quorum size", writeQuorumSize
+	# print "Access set", accessSet
+	# print "List of replicas", listOfReplicas
+	# print "Flexible paxos enabled", FLEXIBLE_PAXOS
+	# print "read quorums", specificReadQuorums
+	# print "write quorums", specificWriteQuorums
 
 	if not os.path.exists(os.path.dirname(args.outputpath)):
 		try:
@@ -520,7 +529,11 @@ def main():
 	getLatencyPerFrontEnd = {}
 	putLatencyPerFrontEnd = {}
 
+	getLatencyPerFrontEnd["aggregate"] = []
+	putLatencyPerFrontEnd["aggregate"] = []
+
 	if multiGetEnabled:
+		print "Enterering mutli get"
 		quorumSystem = BasicQuorumSystem(readQuorumSize, writeQuorumSize)
 		getLatencyPerFrontEnd["aggregate"] = []
 		for _ in range(numberOfRequests):
@@ -545,10 +558,8 @@ def main():
 		return
 
 	if quorumSystem == "basic":
-		print "Runnning siumlation for basic quorum system..."
+		# print "Runnning siumlation for basic quorum system..."
 		quorumSystem = BasicQuorumSystem(readQuorumSize, writeQuorumSize)
-		getLatencyPerFrontEnd["aggregate"] = []
-		putLatencyPerFrontEnd["aggregate"] = []
 		for _ in range(numberOfRequests):
 			frontend = random.choice(accessSet)
 			sampleGet = GetRequestGenerator(networkLatencies, storageLatencies[0], frontend, listOfReplicas, quorumSystem, {})
@@ -564,7 +575,7 @@ def main():
 		writeOutput(getLatencyPerFrontEnd, putLatencyPerFrontEnd, outputFile)
 
 	elif quorumSystem == "spec":
-		print "Running simmulation for specific quorum system..."
+		# print "Running simmulation for specific quorum system..."
 		quorumSystem = SpecifiedQuorumSystem(specificReadQuorums, specificWriteQuorums)
 		for _ in range(numberOfRequests):
 			frontend = random.choice(accessSet)
@@ -581,7 +592,6 @@ def main():
 		writeOutput(getLatencyPerFrontEnd, putLatencyPerFrontEnd, outputFile)
 
 	elif quorumSystem == "specrps":
-		print "Running simmulation for specific RPS quorum system..."
 		quorumSystem = SpecifiedRPSQuorumSystem(numberOfSplits, specificReadQuorums, specificWriteQuorums, 1, 1)
 		for _ in range(numberOfRequests):
 			frontend = random.choice(accessSet)
@@ -596,6 +606,15 @@ def main():
 			putLatencyPerFrontEnd[frontend].append(samplePut)
 			putLatencyPerFrontEnd["aggregate"].append(samplePut)
 		writeOutput(getLatencyPerFrontEnd, putLatencyPerFrontEnd, outputFile)
+
+
+	totalGetLatency = sum(getLatencyPerFrontEnd["aggregate"])
+	totalPutLatency = sum(putLatencyPerFrontEnd["aggregate"])
+
+	print (totalGetLatency + totalPutLatency ) * BANDWIDTH_COST/1000
+
+
+
 
 
 
