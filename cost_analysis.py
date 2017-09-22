@@ -9,8 +9,9 @@ import random
 STORAGE_COST = 0.08 # PER GB
 TRANSACTION_READ_COST = 0.004  #PER 10000 TRANSACTIONS
 TRANSACTION_WRITE_COST = 0.05 
-BANDWIDTH_COST = 0.08
+BANDWIDTH_COST = 0.07
 DATA_SIZE = 10
+SIZE_PER_REQUEST = 0.065 
 
 dcIndexMap = {
   '0': 'aws/ap-northeast-1',
@@ -70,7 +71,7 @@ def computeStorageLatencyReplication(listOfReplicas, numberOfSplits, splitSize):
 
 def computeStorageLatencyECC(listOfReplicas, numberOfSplits, splitSize):
 
-    totalDataECC = DATA_SIZE*len(listOfReplicas)/splitSize
+    totalDataECC = len(listOfReplicas)*DATA_SIZE/splitSize
 
     return  totalDataECC*STORAGE_COST
 
@@ -79,9 +80,27 @@ def computeStorageLatencyPanda(listOfReplicas, numberOfSplits, splitSize):
     totalSlots = 0
     for replica in listOfReplicas:
         totalSlots += numberOfSplits[replica]
-    totalDataPanda = totalSlots*splitSize
+    totalDataPanda = totalSlots*DATA_SIZE/splitSize
 
     return totalDataPanda*STORAGE_COST
+
+def ComputeBandwidthCostReplication(listOfReplicas, nop, readQuorumSize, writeQourumSize):
+
+    totalBandWidthReplication = 2*nop*writeQourumSize + nop*readQuorumSize
+
+    return totalBandWidthReplication*SIZE_PER_REQUEST*BANDWIDTH_COST/1000
+
+def ComputeBandwidthCostECC(listOfReplicas, nop, readQuorumSize, writeQourumSize):
+
+    totalBandwidthECC = nop*writeQourumSize+ nop*len(listOfReplicas) + nop*len(listOfReplicas)
+
+    return totalBandwidthECC*SIZE_PER_REQUEST*BANDWIDTH_COST/1000
+
+def ComputeBandwidthCostPanda(listOfReplicas, nop, readQuorumSize, writeQourumSize):
+
+    totalBandwidthPanda = nop*readQuorumSize +  nop*len(listOfReplicas) + nop*len(listOfReplicas)
+
+    return totalBandwidthPanda*SIZE_PER_REQUEST*BANDWIDTH_COST/1000
 
 def ComputeTransactionCostReplication(listOfReplicas, nop, readQuorumSize, writeQourumSize):
 
@@ -181,20 +200,24 @@ def main():
     # print "List of replicas", listOfReplicas
     # print "read quorums", specificReadQuorums
     # print "write quorums", specificWriteQuorums
+    # print "Split size", splitSize
 
     storageCost = 0
     transactionCost = 0
     if quorumSystem == "basic" and splitSize == 1:
         storageCost = computeStorageLatencyReplication(listOfReplicas, numberOfSplits, splitSize)
         transactionCost = ComputeTransactionCostReplication(listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize)
+        bandWidthCost = ComputeBandwidthCostReplication(listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize)
     elif quorumSystem == "basic" and splitSize != 1:
         storageCost = computeStorageLatencyECC(listOfReplicas, numberOfSplits, splitSize)
         transactionCost = ComputeTransactionCostECC(listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize)
+        bandWidthCost = ComputeBandwidthCostECC(listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize)
     elif quorumSystem == "spec":
         storageCost = computeStorageLatencyPanda(listOfReplicas, numberOfSplits, splitSize)
         transactionCost = ComputeTransactionCostPanda(listOfReplicas, numberOfRequests, len(specificReadQuorums[0]), len(specificWriteQuorums[0]))
+        bandWidthCost = ComputeBandwidthCostPanda(listOfReplicas, numberOfRequests, len(specificReadQuorums[0]), len(specificWriteQuorums[0]))
 
-    print storageCost + transactionCost
+    print storageCost, " +" , transactionCost, " +" , bandWidthCost, "=", storageCost + transactionCost + bandWidthCost
 
 if __name__ == '__main__':
     main()

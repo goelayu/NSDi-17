@@ -607,11 +607,11 @@ def main():
 			putLatencyPerFrontEnd["aggregate"].append(samplePut)
 		writeOutput(getLatencyPerFrontEnd, putLatencyPerFrontEnd, outputFile)
 
+	print "Simulation completed. Results stored in", outputFile.name
+	# totalGetLatency = sum(getLatencyPerFrontEnd["aggregate"])
+	# totalPutLatency = sum(putLatencyPerFrontEnd["aggregate"])
 
-	totalGetLatency = sum(getLatencyPerFrontEnd["aggregate"])
-	totalPutLatency = sum(putLatencyPerFrontEnd["aggregate"])
-
-	print (totalGetLatency + totalPutLatency ) * BANDWIDTH_COST/1000
+	# print (totalGetLatency + totalPutLatency ) * BANDWIDTH_COST/1000
 
 
 
