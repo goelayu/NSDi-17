@@ -66,35 +66,35 @@ def computeStorage(costs, dataSizeGB, listOfReplicas, numberOfSplits, splitSize,
 
     return  totalDataECC*costs.storagePerGB
 
-def ComputeBandwidthCostECC(costs, sizePerRequestGB, listOfReplicas, nop, readQuorumSize, writeQuorumSize, splitSize):
+def ComputeBandwidthCostECC(costs, sizePerRequestGB, listOfReplicas, nop, readQuorumSize, writeQuorumSize, splitSize, getFrac):
 
-    totalBandwidthECC = nop*writeQuorumSize+ nop*len(listOfReplicas) + nop*len(listOfReplicas)
+    bw = nop * (1-getFrac) * writeQuorumSize + nop * (1-getFrac) * len(listOfReplicas)
+    bw += nop * getFrac * readQuorumSize
 
-    return totalBandwidthECC*sizePerRequestGB*costs.bwPerGB / float(splitSize)
+    return bw * sizePerRequestGB * costs.bwPerGB / float(splitSize)
 
-def ComputeBandwidthCostPando(costs, sizePerRequestGB, listOfReplicas, nop, readQuorumSize, writeQuorumSize, splitSize):
+def ComputeBandwidthCostPando(costs, sizePerRequestGB, listOfReplicas, nop, readQuorumSize, writeQuorumSize, splitSize, getFrac):
 
-    totalBandwidthPando = nop*readQuorumSize +  nop*len(listOfReplicas) + nop*len(listOfReplicas)
+    bw = nop * (1-getFrac) * readQuorumSize + nop * getFrac * len(listOfReplicas)
+    bw += nop * getFrac * readQuorumSize
 
-    return totalBandwidthPando*sizePerRequestGB*costs.bwPerGB / float(splitSize)
+    return bw * sizePerRequestGB * costs.bwPerGB / float(splitSize)
 
-def ComputeTransactionCostECC(costs, listOfReplicas, nop, readQuorumSize, writeQuorumSize):
+def ComputeTransactionCostECC(costs, listOfReplicas, nop, readQuorumSize, writeQuorumSize, getFrac):
 
-    totalTransactionECCCost = (
-      nop*writeQuorumSize*costs.opWritePer10K/10000 +
-      nop*len(listOfReplicas)*costs.opWritePer10K/10000 +
-      nop*readQuorumSize*costs.opReadPer10K/10000)
+    c = nop*(1-getFrac)*writeQuorumSize*costs.opWritePer10K/10000
+    c += nop*(1-getFrac)*len(listOfReplicas)*costs.opWritePer10K/10000
+    c += nop*getFrac*readQuorumSize*costs.opReadPer10K/10000
 
-    return totalTransactionECCCost
+    return c
 
-def ComputeTransactionCostPando(costs, listOfReplicas, nop, readQuorumSize, writeQuorumSize):
+def ComputeTransactionCostPando(costs, listOfReplicas, nop, readQuorumSize, writeQuorumSize, getFrac):
 
-    totalTransactionPandoCost = (
-      nop*readQuorumSize*costs.opWritePer10K/10000 +
-      nop*len(listOfReplicas)*costs.opWritePer10K/10000 +
-      nop*readQuorumSize*costs.opReadPer10K/10000)
+    c = nop*(1-getFrac)*readQuorumSize*costs.opWritePer10K/10000
+    c += nop*(1-getFrac)*len(listOfReplicas)*costs.opWritePer10K/10000
+    c += nop*getFrac*readQuorumSize*costs.opReadPer10K/10000
 
-    return totalTransactionPandoCost
+    return c
 
 def ReadConfigFile(solution_file):
     tree = et.parse(solution_file)
@@ -120,6 +120,7 @@ def main():
     parser.add_argument("--db-size-gb", type=float, default=100)
     parser.add_argument("--value-size-bytes", type=float, default=1024)
     parser.add_argument("--op-count", default=50000, type=int)
+    parser.add_argument("--gp-ratio", default=1, type=float)
     parser.add_argument("configpath")
     args = parser.parse_args()
 
@@ -133,6 +134,7 @@ def main():
     numberOfRequests = args.op_count
     dataSizeGB = args.db_size_gb
     valueSizeGB = args.value_size_bytes / float(2**30)
+    getFrac = args.gp_ratio / (args.gp_ratio + 1.0)
 
     readQuorumSize = 0
     writeQuorumSize = 0
@@ -198,12 +200,17 @@ def main():
     transactionCost = 0
     if quorumSystem == "basic":
         storageCost = computeStorage(costConfig, dataSizeGB, listOfReplicas, numberOfSplits, splitSize, numSplitsOverall)
-        transactionCost = ComputeTransactionCostECC(costConfig, listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize)
-        bandWidthCost = ComputeBandwidthCostECC(costConfig, valueSizeGB, listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize, splitSize)
+        transactionCost = ComputeTransactionCostECC(costConfig, listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize, getFrac)
+        bandWidthCost = ComputeBandwidthCostECC(costConfig, valueSizeGB, listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize, splitSize, getFrac)
     elif quorumSystem == "spec":
         storageCost = computeStorage(costConfig, dataSizeGB, listOfReplicas, numberOfSplits, splitSize, numSplitsOverall)
-        transactionCost = ComputeTransactionCostPando(costConfig, listOfReplicas, numberOfRequests, len(specificReadQuorums[0]), len(specificWriteQuorums[0]))
-        bandWidthCost = ComputeBandwidthCostPando(costConfig, valueSizeGB, listOfReplicas, numberOfRequests, len(specificReadQuorums[0]), len(specificWriteQuorums[0]), splitSize)
+        transactionCost = 0
+        bandWidthCost = 0
+        assert len(specificReadQuorums) == len(specificWriteQuorums)
+        for i in range(len(specificReadQuorums)):
+            numReq = numberOfRequests / float(len(specificReadQuorums))
+            transactionCost += ComputeTransactionCostPando(costConfig, listOfReplicas, numReq, len(specificReadQuorums[i]), len(specificWriteQuorums[i]), getFrac)
+            bandWidthCost += ComputeBandwidthCostPando(costConfig, valueSizeGB, listOfReplicas, numReq, len(specificReadQuorums[i]), len(specificWriteQuorums[i]), splitSize, getFrac)
 
     #print storageCost, " +", transactionCost, " +", bandWidthCost, "=", storageCost + transactionCost + bandWidthCost
     print "{0},{1}".format("Storage", storageCost)
