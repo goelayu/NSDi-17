@@ -1,17 +1,15 @@
 #!/usr/bin/env python
 
 # Storage cost , network bandwidth cost, per access cost
-import operator
 import xml.etree.ElementTree as et
 import argparse
-import random
 
-STORAGE_COST = 0.08 # PER GB
-TRANSACTION_READ_COST = 0.004  #PER 10000 TRANSACTIONS
-TRANSACTION_WRITE_COST = 0.05 
-BANDWIDTH_COST = 0.07
-DATA_SIZE = 10
-SIZE_PER_REQUEST = 0.065 
+class CostConfig(object):
+    def __init__(self, storagePerGB=-1.0, opReadPer10K=-1.0, opWritePer10K=-1.0, bwPerGB=-1.0):
+        self.storagePerGB = storagePerGB
+        self.opReadPer10K = opReadPer10K
+        self.opWritePer10K = opWritePer10K
+        self.bwPerGB = bwPerGB
 
 dcIndexMap = {
   '0': 'aws/ap-northeast-1',
@@ -62,63 +60,41 @@ dcIndexMap = {
   '45': 'gc/us-west1',
 }
 
+def computeStorage(costs, dataSizeGB, listOfReplicas, numberOfSplits, splitSize, numSplitsOverall):
 
-def computeStorageLatencyReplication(listOfReplicas, numberOfSplits, splitSize):
+    totalDataECC = numSplitsOverall*dataSizeGB/splitSize
 
-    totalDataReplication = DATA_SIZE*len(listOfReplicas)
+    return  totalDataECC*costs.storagePerGB
 
-    return totalDataReplication*STORAGE_COST
+def ComputeBandwidthCostECC(costs, sizePerRequestGB, listOfReplicas, nop, readQuorumSize, writeQuorumSize, splitSize, getFrac):
 
-def computeStorageLatencyECC(listOfReplicas, numberOfSplits, splitSize):
+    bw = nop * (1-getFrac) * writeQuorumSize + nop * (1-getFrac) * len(listOfReplicas)
+    bw += nop * getFrac * readQuorumSize
 
-    totalDataECC = len(listOfReplicas)*DATA_SIZE/splitSize
+    return bw * sizePerRequestGB * costs.bwPerGB / float(splitSize)
 
-    return  totalDataECC*STORAGE_COST
+def ComputeBandwidthCostPando(costs, sizePerRequestGB, listOfReplicas, nop, readQuorumSize, writeQuorumSize, splitSize, getFrac):
 
-def computeStorageLatencyPanda(listOfReplicas, numberOfSplits, splitSize):
+    bw = nop * (1-getFrac) * readQuorumSize + nop * getFrac * len(listOfReplicas)
+    bw += nop * getFrac * readQuorumSize
 
-    totalSlots = 0
-    for replica in listOfReplicas:
-        totalSlots += numberOfSplits[replica]
-    totalDataPanda = totalSlots*DATA_SIZE/splitSize
+    return bw * sizePerRequestGB * costs.bwPerGB / float(splitSize)
 
-    return totalDataPanda*STORAGE_COST
+def ComputeTransactionCostECC(costs, listOfReplicas, nop, readQuorumSize, writeQuorumSize, getFrac):
 
-def ComputeBandwidthCostReplication(listOfReplicas, nop, readQuorumSize, writeQourumSize):
+    c = nop*(1-getFrac)*writeQuorumSize*costs.opWritePer10K/10000
+    c += nop*(1-getFrac)*len(listOfReplicas)*costs.opWritePer10K/10000
+    c += nop*getFrac*readQuorumSize*costs.opReadPer10K/10000
 
-    totalBandWidthReplication = 2*nop*writeQourumSize + nop*readQuorumSize
+    return c
 
-    return totalBandWidthReplication*SIZE_PER_REQUEST*BANDWIDTH_COST/1000
+def ComputeTransactionCostPando(costs, listOfReplicas, nop, readQuorumSize, writeQuorumSize, getFrac):
 
-def ComputeBandwidthCostECC(listOfReplicas, nop, readQuorumSize, writeQourumSize):
+    c = nop*(1-getFrac)*readQuorumSize*costs.opWritePer10K/10000
+    c += nop*(1-getFrac)*len(listOfReplicas)*costs.opWritePer10K/10000
+    c += nop*getFrac*readQuorumSize*costs.opReadPer10K/10000
 
-    totalBandwidthECC = nop*writeQourumSize+ nop*len(listOfReplicas) + nop*len(listOfReplicas)
-
-    return totalBandwidthECC*SIZE_PER_REQUEST*BANDWIDTH_COST/1000
-
-def ComputeBandwidthCostPanda(listOfReplicas, nop, readQuorumSize, writeQourumSize):
-
-    totalBandwidthPanda = nop*readQuorumSize +  nop*len(listOfReplicas) + nop*len(listOfReplicas)
-
-    return totalBandwidthPanda*SIZE_PER_REQUEST*BANDWIDTH_COST/1000
-
-def ComputeTransactionCostReplication(listOfReplicas, nop, readQuorumSize, writeQourumSize):
-
-    totalTransactionReplicationCost = 2*nop*writeQourumSize*TRANSACTION_WRITE_COST/10000 + nop*readQuorumSize*TRANSACTION_READ_COST/10000
-
-    return totalTransactionReplicationCost
-
-def ComputeTransactionCostECC(listOfReplicas, nop, readQuorumSize, writeQourumSize):
-
-    totalTransactionECCCost = nop*writeQourumSize*TRANSACTION_WRITE_COST/10000 + nop*len(listOfReplicas)*TRANSACTION_WRITE_COST/10000 + nop*len(listOfReplicas)*TRANSACTION_READ_COST/10000
-
-    return totalTransactionECCCost
-
-def ComputeTransactionCostPanda(listOfReplicas, nop, readQuorumSize, writeQourumSize):
-
-    totalTransactionPandaCost = nop*readQuorumSize*TRANSACTION_READ_COST/10000 +  nop*len(listOfReplicas)*TRANSACTION_WRITE_COST/10000 + nop*len(listOfReplicas)*TRANSACTION_READ_COST/10000
-
-    return totalTransactionPandaCost
+    return c
 
 def ReadConfigFile(solution_file):
     tree = et.parse(solution_file)
@@ -136,14 +112,29 @@ def ReadConfigFile(solution_file):
 
 def main():
     # make execution deterministic
-    random.seed(0)
     parser = argparse.ArgumentParser()
+    parser.add_argument("--storage-per-gb", type=float, default=0.0208)
+    parser.add_argument("--op-read-per-10k", type=float, default=0.004)
+    parser.add_argument("--op-write-per-10k", type=float, default=0.05)
+    parser.add_argument("--bw-per-gb", type=float, default=0.087)
+    parser.add_argument("--db-size-gb", type=float, default=100)
+    parser.add_argument("--value-size-bytes", type=float, default=1024)
     parser.add_argument("--op-count", default=50000, type=int)
+    parser.add_argument("--gp-ratio", default=1, type=float)
     parser.add_argument("configpath")
     args = parser.parse_args()
 
+    costConfig = CostConfig(
+	  storagePerGB=args.storage_per_gb,
+	  opReadPer10K=args.op_read_per_10k,
+	  opWritePer10K=args.op_write_per_10k,
+	  bwPerGB=args.bw_per_gb)
+
     configFile = args.configpath
     numberOfRequests = args.op_count
+    dataSizeGB = args.db_size_gb
+    valueSizeGB = args.value_size_bytes / float(2**30)
+    getFrac = args.gp_ratio / (args.gp_ratio + 1.0)
 
     readQuorumSize = 0
     writeQuorumSize = 0
@@ -190,6 +181,8 @@ def main():
             numberOfSplits[dcIndexMap[iter[0][1]]] = iter[1]
         elif len(iter[0]) == 1 and iter[0][0] == "NSPLITS":
             splitSize = iter[1]
+        elif len(iter[0]) == 1 and iter[0][0] == "NREPLICAS":
+            numSplitsOverall = iter[1]
 
     specificReadQuorums = [q for q in specificReadQuorums if q]
     specificWriteQuorums = [q for q in specificWriteQuorums if q]
@@ -201,23 +194,28 @@ def main():
     # print "read quorums", specificReadQuorums
     # print "write quorums", specificWriteQuorums
     # print "Split size", splitSize
+    # print "Num splits", numSplitsOverall
 
     storageCost = 0
     transactionCost = 0
-    if quorumSystem == "basic" and splitSize == 1:
-        storageCost = computeStorageLatencyReplication(listOfReplicas, numberOfSplits, splitSize)
-        transactionCost = ComputeTransactionCostReplication(listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize)
-        bandWidthCost = ComputeBandwidthCostReplication(listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize)
-    elif quorumSystem == "basic" and splitSize != 1:
-        storageCost = computeStorageLatencyECC(listOfReplicas, numberOfSplits, splitSize)
-        transactionCost = ComputeTransactionCostECC(listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize)
-        bandWidthCost = ComputeBandwidthCostECC(listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize)
+    if quorumSystem == "basic":
+        storageCost = computeStorage(costConfig, dataSizeGB, listOfReplicas, numberOfSplits, splitSize, numSplitsOverall)
+        transactionCost = ComputeTransactionCostECC(costConfig, listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize, getFrac)
+        bandWidthCost = ComputeBandwidthCostECC(costConfig, valueSizeGB, listOfReplicas, numberOfRequests, readQuorumSize, writeQuorumSize, splitSize, getFrac)
     elif quorumSystem == "spec":
-        storageCost = computeStorageLatencyPanda(listOfReplicas, numberOfSplits, splitSize)
-        transactionCost = ComputeTransactionCostPanda(listOfReplicas, numberOfRequests, len(specificReadQuorums[0]), len(specificWriteQuorums[0]))
-        bandWidthCost = ComputeBandwidthCostPanda(listOfReplicas, numberOfRequests, len(specificReadQuorums[0]), len(specificWriteQuorums[0]))
+        storageCost = computeStorage(costConfig, dataSizeGB, listOfReplicas, numberOfSplits, splitSize, numSplitsOverall)
+        transactionCost = 0
+        bandWidthCost = 0
+        assert len(specificReadQuorums) == len(specificWriteQuorums)
+        for i in range(len(specificReadQuorums)):
+            numReq = numberOfRequests / float(len(specificReadQuorums))
+            transactionCost += ComputeTransactionCostPando(costConfig, listOfReplicas, numReq, len(specificReadQuorums[i]), len(specificWriteQuorums[i]), getFrac)
+            bandWidthCost += ComputeBandwidthCostPando(costConfig, valueSizeGB, listOfReplicas, numReq, len(specificReadQuorums[i]), len(specificWriteQuorums[i]), splitSize, getFrac)
 
-    print storageCost, " +" , transactionCost, " +" , bandWidthCost, "=", storageCost + transactionCost + bandWidthCost
+    #print storageCost, " +", transactionCost, " +", bandWidthCost, "=", storageCost + transactionCost + bandWidthCost
+    print "{0},{1}".format("Storage", storageCost)
+    print "{0},{1}".format("Request", transactionCost)
+    print "{0},{1}".format("Network", bandWidthCost)
 
 if __name__ == '__main__':
-    main()
+  main()
